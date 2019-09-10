@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -53,13 +54,29 @@ func main() {
 			}
 			msgCount := *attr.Attributes["ApproximateNumberOfMessages"]
 			if !*onlyMessages || msgCount != "0" {
-				fmt.Printf("%s: %s\n", cyan("QueueUrl"), yellow(*q))
-				for k, v := range attr.Attributes {
-					fmt.Printf("\t%s: %s\n", cyan(k), yellow(display(k, *v)))
+				keys, max := prepKeys(attr.Attributes)
+				key := "QueueUrl"
+				format := fmt.Sprintf("%%-%ds", max)
+				fmt.Printf("%s : %s\n", cyan(fmt.Sprintf(format, key)), yellow(*q))
+				for _, key := range keys {
+					fmt.Printf("\t%s : %s\n", cyan(fmt.Sprintf(format, key)), yellow(display(key, *attr.Attributes[key])))
 				}
 			}
 		}
 	}
+}
+func prepKeys(attrs map[string]*string) ([]string, int) {
+	max := 0
+	var keys []string
+	for k, _ := range attrs {
+		n := len(k)
+		if n > max {
+			max = n
+		}
+		keys = append(keys, k)
+	}
+	sort.Sort(sort.StringSlice(keys))
+	return keys, max
 }
 
 func display(key, value string) string {
