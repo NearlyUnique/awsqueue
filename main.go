@@ -6,17 +6,26 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
 )
 
+type Result struct {
+	Filter      string              `json:"filter"`
+	AllMessages bool                `json:"allMessages"`
+	Attrs       []map[string]string `json:"attrs"`
+}
+
 func main() {
 	filter := flag.String("filter", "", "substring search to filter queues")
-	allMessages := flag.Bool("all-messages", false, "If trye shows message attributes event when there are no messages in the queue")
+	format := flag.String("format", "json", "Output format, json or summary (count,name)")
+	allMessages := flag.Bool("all-messages", false, "If true shows message attributes event when there are no messages in the queue")
 	regionArg := flag.String("region", os.Getenv("AWS_REGION"), "AWS region, defaults from env variable (AWS_REGION) then to eu-west-1")
 	flag.Parse()
 
@@ -32,10 +41,25 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	readQueueAttrs(*filter, list, svc, *allMessages)
+	result := readQueueAttrs(*filter, list, svc, *allMessages)
+
+	switch *format {
+	case "summary":
+		for _, attr := range result.Attrs {
+			fmt.Printf("%5s %s\n", attr["ApproximateNumberOfMessages"], attr["name"])
+		}
+	default:
+		buf, err := json.Marshal(result)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "failed marshalling json: %v\n", err)
+			return
+		}
+		fmt.Println(string(buf))
+	}
+
 }
 
-func readQueueAttrs(filter string, list *sqs.ListQueuesOutput, svc *sqs.SQS, allMessages bool) {
+func readQueueAttrs(filter string, list *sqs.ListQueuesOutput, svc *sqs.SQS, allMessages bool) Result {
 	var wg sync.WaitGroup
 	ch := make(chan map[string]string, len(list.QueueUrls))
 	// toLower is not cool but the list is short, as are the strings
@@ -57,9 +81,13 @@ func readQueueAttrs(filter string, list *sqs.ListQueuesOutput, svc *sqs.SQS, all
 				}
 				msgCount := *attr.Attributes["ApproximateNumberOfMessages"]
 				if allMessages || msgCount != "0" {
-					attrs := map[string]string{"QueueUrl": q}
+					parts := strings.Split(q, "/")
+					attrs := map[string]string{
+						"queueUrl": q,
+						"name":     parts[len(parts)-1],
+					}
 					for key, value := range attr.Attributes {
-						attrs[key] = *value
+						attrs[key] = formatValue(key, *value)
 					}
 					ch <- attrs
 				}
@@ -68,29 +96,36 @@ func readQueueAttrs(filter string, list *sqs.ListQueuesOutput, svc *sqs.SQS, all
 	}
 	var done sync.WaitGroup
 	done.Add(1)
-	go writeJSON(f, allMessages, ch, &done)
+	var results Result
+	go func() {
+		results = writeJSON(f, allMessages, ch, &done)
+	}()
 	wg.Wait()
 	close(ch)
 	done.Wait()
+	return results
 }
 
-func writeJSON(filter string, onlyMessages bool, ch chan map[string]string, done *sync.WaitGroup) {
+func writeJSON(filter string, onlyMessages bool, ch chan map[string]string, done *sync.WaitGroup) Result {
 	defer done.Done()
-	results := struct {
-		Filter      string
-		AllMessages bool
-		Attrs       []map[string]string
-	}{
+	results := Result{
 		Filter:      filter,
 		AllMessages: onlyMessages,
 	}
 	for a := range ch {
 		results.Attrs = append(results.Attrs, a)
 	}
-	buf, err := json.Marshal(results)
-	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "failed marshalling json: %v\n", err)
-		return
+	return results
+}
+
+func formatValue(key, value string) string {
+	if !strings.HasSuffix(key, "Timestamp") {
+		return value
 	}
-	fmt.Println(string(buf))
+	ts, err := strconv.Atoi(value)
+	if err != nil {
+		return value
+	}
+	t := time.Unix(int64(ts), 0)
+	return t.String()
 }
