@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -22,7 +24,7 @@ func listQueues(svc *sqs.SQS, filter string, allMessages bool) (QueueSearchResul
 
 func readQueueAttrs(svc *sqs.SQS, list *sqs.ListQueuesOutput, filter string, allMessages bool) QueueSearchResult {
 	var wg sync.WaitGroup
-	ch := make(chan map[string]string, len(list.QueueUrls))
+	ch := make(chan map[string]string)
 	// toLower is not cool but the list is short, as are the strings
 	f := strings.ToLower(filter)
 	for _, q := range list.QueueUrls {
@@ -40,29 +42,52 @@ func readQueueAttrs(svc *sqs.SQS, list *sqs.ListQueuesOutput, filter string, all
 					_, _ = fmt.Fprintf(os.Stderr, "Failed at: %v\n", q)
 					log.Fatal(err)
 				}
-				msgCount := *attr.Attributes["ApproximateNumberOfMessages"]
-				if allMessages || msgCount != "0" {
-					parts := strings.Split(q, "/")
-					attrs := map[string]string{
-						"QueueUrl": q,
-						"Name":     parts[len(parts)-1],
-					}
-					for key, value := range attr.Attributes {
-						attrs[key] = formatValue(key, *value)
-					}
-					ch <- attrs
+				parts := strings.Split(q, "/")
+				attrs := map[string]string{
+					AttrKeyQueueUrl:  q,
+					AttrKeyQueueName: parts[len(parts)-1],
 				}
+				for key, value := range attr.Attributes {
+					attrs[key] = formatValue(key, *value)
+				}
+				ch <- attrs
 			}(*q)
 		}
 	}
-	var done sync.WaitGroup
-	done.Add(1)
-	var results QueueSearchResult
 	go func() {
-		results = writeJSON(f, allMessages, ch, &done)
+		wg.Wait()
+		close(ch)
 	}()
-	wg.Wait()
-	close(ch)
-	done.Wait()
+
+	results := QueueSearchResult{
+		Filter:      filter,
+		AllMessages: allMessages,
+	}
+	for a := range ch {
+		results.Attrs = append(results.Attrs, a)
+	}
+
 	return results
+}
+
+func printList(asJson bool, result QueueSearchResult) error {
+	if !result.AllMessages {
+		for i := 0; i < len(result.Attrs); i++ {
+			if result.Attrs[i]["ApproximateNumberOfMessages"] == "0" {
+				result.Attrs = append(result.Attrs[:i], result.Attrs[i+1:]...)
+			}
+		}
+	}
+	if asJson {
+		buf, err := json.Marshal(result)
+		if err != nil {
+			return errors.New(fmt.Sprintf("failed marshalling json: %v\n", err))
+		}
+		fmt.Println(string(buf))
+		return nil
+	}
+	for _, attr := range result.Attrs {
+		fmt.Printf("%5s %s\n", attr["ApproximateNumberOfMessages"], attr[AttrKeyQueueName])
+	}
+	return nil
 }

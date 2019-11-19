@@ -23,7 +23,7 @@ type (
 	}
 	message struct {
 		MsgAttrib map[string]string `json:"msgAttribs"`
-		Attrib    map[string]string `json:"meta"`
+		Attrib    map[string]string `json:"attrib"`
 		Message   string            `json:"message"`
 	}
 )
@@ -92,7 +92,7 @@ func simplifyMessage(input *sqs.ReceiveMessageOutput) []message {
 	return result
 }
 
-func dumpMessages(options queueReadOptions) {
+func readMessages(options queueReadOptions) {
 	var cancel func()
 	options.ctx, cancel = context.WithCancel(options.ctx)
 	sigEnd := registerForCtrlC()
@@ -125,5 +125,16 @@ func dumpMessages(options queueReadOptions) {
 			results = append(results, msg...)
 			sum.add(msg)
 		}
+	}
+}
+
+func readOptions(ctx context.Context, svc *sqs.SQS, queueUrl string) queueReadOptions {
+	return queueReadOptions{
+		svc:      svc,
+		queueURL: queueUrl,
+		ctx:      ctx,
+		msg:      make(chan []message),
+		err:      make(chan error),
+		wg:       &sync.WaitGroup{},
 	}
 }
