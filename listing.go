@@ -75,6 +75,7 @@ func printList(asJson bool, result QueueSearchResult) error {
 		for i := 0; i < len(result.Attrs); i++ {
 			if result.Attrs[i]["ApproximateNumberOfMessages"] == "0" {
 				result.Attrs = append(result.Attrs[:i], result.Attrs[i+1:]...)
+				i--
 			}
 		}
 	}
