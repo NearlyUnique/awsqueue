@@ -24,7 +24,7 @@ type (
 	message struct {
 		MsgAttrib map[string]string `json:"msgAttribs"`
 		Attrib    map[string]string `json:"attrib"`
-		Message   string            `json:"message"`
+		Message   flexiString       `json:"message"`
 	}
 )
 
@@ -85,7 +85,7 @@ func simplifyMessage(input *sqs.ReceiveMessageOutput) []message {
 			msg.MsgAttrib[k] = val
 		}
 		if m.Body != nil {
-			msg.Message = *m.Body
+			msg.Message = flexiString(*m.Body)
 		}
 		result = append(result, msg)
 	}

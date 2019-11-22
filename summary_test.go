@@ -19,7 +19,7 @@ func Test_a_single_message_can_be_simplified(t *testing.T) {
 	actual := simplifyMessage(&awsMsg)
 
 	require.NotEmpty(t, actual)
-	assert.Equal(t, "body1", actual[0].Message)
+	assert.Equal(t, flexiString("body1"), actual[0].Message)
 	assert.Equal(t, "v1", actual[0].Attrib["k1"])
 	assert.Equal(t, "msgV1", actual[0].MsgAttrib["msgK1"])
 }

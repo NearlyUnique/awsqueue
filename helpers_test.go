@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/spf13/pflag"
@@ -92,5 +93,27 @@ func Test_command_action_is_determined_from_flags(t *testing.T) {
 		_, err := cmdAction(fs)
 
 		require.Error(t, err)
+	})
+}
+
+func Test_flexistring_json_marshalling(t *testing.T) {
+	type testType struct {
+		Value flexiString
+	}
+	t.Run("a basic string comes out as text", func(t *testing.T) {
+		fs := testType{`some text`}
+
+		buf, err := json.Marshal(fs)
+
+		require.NoError(t, err)
+		assert.Equal(t, string(buf), `{"Value":"some text"}`)
+	})
+	t.Run("when the string looks like a json object it is treated as such", func(t *testing.T) {
+		fs := testType{`{"some":true}`}
+
+		buf, err := json.Marshal(fs)
+
+		require.NoError(t, err)
+		assert.Equal(t, string(buf), `{"Value":{"some":true}}`)
 	})
 }

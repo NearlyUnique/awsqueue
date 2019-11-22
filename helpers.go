@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/signal"
@@ -66,4 +68,22 @@ func cmdAction(fs *pflag.FlagSet) (CmdAction, error) {
 		return CmdActionWrite, nil
 	}
 	return CmdActionList, nil
+}
+
+type flexiString string
+
+// MarshalJSON custom
+func (fs flexiString) MarshalJSON() ([]byte, error) {
+	buffer := bytes.NewBufferString("")
+	//buffer.WriteString("}")
+	if len(fs) >= 2 && fs[0] == '{' && fs[len(fs)-1] == '}' {
+		return []byte(fs), nil
+	}
+	s := string(fs)
+	buf, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	_, err = buffer.Write(buf)
+	return buffer.Bytes(), err
 }
