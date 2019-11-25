@@ -7,6 +7,8 @@ import (
 
 type summary struct {
 	msgAttribs map[string]map[string]int
+	msgCount   int
+	limit      int
 }
 
 func (s *summary) add(msg []message) {
@@ -15,6 +17,7 @@ func (s *summary) add(msg []message) {
 	}
 }
 func (s *summary) addOne(msg message) {
+	s.msgCount++
 	if len(s.msgAttribs) == 0 {
 		s.msgAttribs = make(map[string]map[string]int)
 	}
@@ -33,5 +36,17 @@ func (s *summary) write() {
 	if len(s.msgAttribs) > 0 {
 		buf, _ := json.Marshal(s.msgAttribs)
 		_ = ioutil.WriteFile("summary.json", buf, 0666)
+	}
+}
+
+func (s *summary) analyse() {
+	for k, v := range s.msgAttribs {
+		if len(v) == s.msgCount && s.msgCount > 1 {
+			var randomK string
+			for randomK, _ = range v {
+				break
+			}
+			s.msgAttribs[k] = map[string]int{"$UNIQUE:" + randomK: s.msgCount}
+		}
 	}
 }

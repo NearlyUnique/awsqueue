@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/service/sqs"
@@ -33,6 +35,7 @@ func Test_a_single_message_can_produce_a_summary(t *testing.T) {
 
 	sum := summary{}
 	sum.addOne(msg)
+	sum.analyse()
 
 	assert.Equal(t, 1, len(sum.msgAttribs["mk1"]))
 	assert.Equal(t, 1, sum.msgAttribs["mk1"]["mv1"])
@@ -45,23 +48,41 @@ func Test_when_multiple_messages_are_processed(t *testing.T) {
 		}
 	}
 	t.Run("with identical keys", func(t *testing.T) {
-		t.Run("if the values are equal there is a count of the kv pair for the key", func(t *testing.T) {
+		t.Run("if the values from a non-unique finite set there is a count of the kv pair for the key", func(t *testing.T) {
 			sum := summary{}
 			sum.addOne(msg("k1", "v1"))
-			sum.addOne(msg("k1", "v1"))
-			sum.addOne(msg("k1", "v1"))
-
-			assert.Equal(t, 1, len(sum.msgAttribs["k1"]))
-			assert.Equal(t, 3, sum.msgAttribs["k1"]["v1"])
-		})
-		t.Run("if the values are NOT equal there is a count of the kv pair for the key", func(t *testing.T) {
-			sum := summary{}
 			sum.addOne(msg("k1", "v1"))
 			sum.addOne(msg("k1", "v2"))
+			sum.analyse()
 
 			assert.Equal(t, 2, len(sum.msgAttribs["k1"]))
-			assert.Equal(t, 1, sum.msgAttribs["k1"]["v1"])
+			assert.Equal(t, 2, sum.msgAttribs["k1"]["v1"])
 			assert.Equal(t, 1, sum.msgAttribs["k1"]["v2"])
+		})
+		t.Run("if the number of unique values hits a limit a single marker event is returned", func(t *testing.T) {
+			sum := summary{}
+			var values []string
+			for i := 0; i < 6; i++ {
+				v := fmt.Sprintf("v%d", i)
+				values = append(values, v)
+				sum.addOne(msg("k1", v))
+			}
+
+			sum.analyse()
+
+			assert.Equal(t, 1, len(sum.msgAttribs))
+			assert.Equal(t, 1, len(sum.msgAttribs["k1"]))
+			var part []string
+			actualCount := 0
+			for k, v := range sum.msgAttribs["k1"] {
+				part = strings.Split(k, ":")
+				actualCount = v
+				break
+			}
+			require.Equal(t, 2, len(part))
+			assert.Equal(t, "$UNIQUE", part[0])
+			assert.Contains(t, values, part[1])
+			assert.Equal(t, 6, actualCount)
 		})
 	})
 	t.Run("with unique keys", func(t *testing.T) {
@@ -70,6 +91,7 @@ func Test_when_multiple_messages_are_processed(t *testing.T) {
 			sum.addOne(msg("k1", "any-value"))
 			sum.addOne(msg("k2", "any-value"))
 			sum.addOne(msg("k3", "any-value"))
+			sum.analyse()
 
 			assert.Equal(t, 1, len(sum.msgAttribs["k1"]))
 			assert.Equal(t, 1, sum.msgAttribs["k1"]["any-value"])
