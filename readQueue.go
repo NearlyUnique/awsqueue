@@ -103,27 +103,23 @@ func readMessages(options queueReadOptions) {
 	}
 	done := signalWaitGroupDone(options.wg)
 	results := struct {
-		Messages  []message `json:"messages"`
 		Extracted time.Time `json:"extracted"`
 		Queue     string    `json:"queueUrl"`
+		Messages  []message `json:"messages"`
 	}{
 		Extracted: time.Now().UTC(),
 		Queue:     options.queueURL,
 	}
 	var sum summary
 	defer func() {
-		fmt.Println("writing")
 		if len(results.Messages) > 0 {
-			fmt.Println("writing...")
 			buf, err := json.Marshal(results)
 			if err != nil {
-				fmt.Printf("ERROR:%v\n", err)
+				_, _ = fmt.Fprintf(os.Stderr, "ERROR:%v\n", err)
 			}
 			err = ioutil.WriteFile("result.json", buf, 0666)
 			if err != nil {
-				fmt.Printf("ERROR2:%v\n", err)
-			} else {
-				fmt.Println("ok")
+				_, _ = fmt.Fprintf(os.Stderr, "ERROR2:%v\n", err)
 			}
 		}
 		sum.write()
@@ -135,7 +131,6 @@ func readMessages(options queueReadOptions) {
 			_, _ = fmt.Fprintln(os.Stderr, "User canceled, stopping...")
 			cancel()
 		case <-done:
-			fmt.Println("done")
 			return
 		case err := <-options.err:
 			_, _ = fmt.Fprintf(os.Stderr, "Error:%v\n", err)

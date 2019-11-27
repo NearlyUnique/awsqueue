@@ -37,7 +37,7 @@ func readQueueAttrs(svc *sqs.SQS, list *sqs.ListQueuesOutput, filter string, all
 				defer wg.Done()
 				attrQuery := sqs.GetQueueAttributesInput{
 					QueueUrl:       &q,
-					AttributeNames: []*string{aws.String("All")},
+					AttributeNames: []*string{aws.String(sqs.QueueAttributeNameAll)},
 				}
 
 				attr, err := svc.GetQueueAttributes(&attrQuery)
@@ -88,7 +88,7 @@ func printList(asJson bool, result QueueSearchResult) error {
 		return nil
 	}
 	for _, attr := range result.Attrs {
-		fmt.Printf("%5s %s\n", attr["ApproximateNumberOfMessages"], attr[AttrKeyQueueName])
+		fmt.Printf("%5s %s\n", attr[sqs.QueueAttributeNameApproximateNumberOfMessages], attr[AttrKeyQueueName])
 	}
 	return nil
 }
