@@ -24,11 +24,14 @@ func listQueues(svc *sqs.SQS, filter string, allMessages bool) (QueueSearchResul
 
 func readQueueAttrs(svc *sqs.SQS, list *sqs.ListQueuesOutput, filter string, allMessages bool) QueueSearchResult {
 	var wg sync.WaitGroup
-	ch := make(chan map[string]string)
+	ch := make(chan map[string]flexiString)
 	// toLower is not cool but the list is short, as are the strings
-	f := strings.ToLower(filter)
+	results := QueueSearchResult{
+		Filter: filter,
+	}
+
 	for _, q := range list.QueueUrls {
-		if filter == "" || strings.Contains(strings.ToLower(*q), f) {
+		if results.matchesFilter(*q) {
 			wg.Add(1)
 			go func(q string) {
 				defer wg.Done()
@@ -43,12 +46,12 @@ func readQueueAttrs(svc *sqs.SQS, list *sqs.ListQueuesOutput, filter string, all
 					log.Fatal(err)
 				}
 				parts := strings.Split(q, "/")
-				attrs := map[string]string{
-					AttrKeyQueueUrl:  q,
-					AttrKeyQueueName: parts[len(parts)-1],
+				attrs := map[string]flexiString{
+					AttrKeyQueueUrl:  flexiString(q),
+					AttrKeyQueueName: flexiString(parts[len(parts)-1]),
 				}
 				for key, value := range attr.Attributes {
-					attrs[key] = formatValue(key, *value)
+					attrs[key] = flexiString(formatValue(key, *value))
 				}
 				ch <- attrs
 			}(*q)
@@ -59,10 +62,7 @@ func readQueueAttrs(svc *sqs.SQS, list *sqs.ListQueuesOutput, filter string, all
 		close(ch)
 	}()
 
-	results := QueueSearchResult{
-		Filter:      filter,
-		AllMessages: allMessages,
-	}
+	results.AllMessages = allMessages
 	for a := range ch {
 		results.Attrs = append(results.Attrs, a)
 	}
@@ -73,7 +73,7 @@ func readQueueAttrs(svc *sqs.SQS, list *sqs.ListQueuesOutput, filter string, all
 func printList(asJson bool, result QueueSearchResult) error {
 	if !result.AllMessages {
 		for i := 0; i < len(result.Attrs); i++ {
-			if result.Attrs[i]["ApproximateNumberOfMessages"] == "0" {
+			if result.Attrs[i][sqs.QueueAttributeNameApproximateNumberOfMessages] == "0" {
 				result.Attrs = append(result.Attrs[:i], result.Attrs[i+1:]...)
 				i--
 			}
@@ -91,4 +91,8 @@ func printList(asJson bool, result QueueSearchResult) error {
 		fmt.Printf("%5s %s\n", attr["ApproximateNumberOfMessages"], attr[AttrKeyQueueName])
 	}
 	return nil
+}
+
+func (results QueueSearchResult) matchesFilter(queue string) bool {
+	return results.Filter == "" || strings.Contains(strings.ToLower(queue), strings.ToLower(results.Filter))
 }

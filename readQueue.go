@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/sqs"
@@ -22,8 +23,8 @@ type (
 		wg       *sync.WaitGroup
 	}
 	message struct {
-		MsgAttrib map[string]string `json:"msgAttribs"`
-		Attrib    map[string]string `json:"attrib"`
+		MsgAttrib map[string]string `json:"customAttributes"`
+		Attrib    map[string]string `json:"awsAttributes"`
 		Message   flexiString       `json:"message"`
 	}
 )
@@ -101,12 +102,29 @@ func readMessages(options queueReadOptions) {
 		go readQueueData(options)
 	}
 	done := signalWaitGroupDone(options.wg)
-	var results []message
+	results := struct {
+		Messages  []message `json:"messages"`
+		Extracted time.Time `json:"extracted"`
+		Queue     string    `json:"queueUrl"`
+	}{
+		Extracted: time.Now().UTC(),
+		Queue:     options.queueURL,
+	}
 	var sum summary
 	defer func() {
-		if len(results) > 0 {
-			buf, _ := json.Marshal(results)
-			_ = ioutil.WriteFile("result.json", buf, 0666)
+		fmt.Println("writing")
+		if len(results.Messages) > 0 {
+			fmt.Println("writing...")
+			buf, err := json.Marshal(results)
+			if err != nil {
+				fmt.Printf("ERROR:%v\n", err)
+			}
+			err = ioutil.WriteFile("result.json", buf, 0666)
+			if err != nil {
+				fmt.Printf("ERROR2:%v\n", err)
+			} else {
+				fmt.Println("ok")
+			}
 		}
 		sum.write()
 	}()
@@ -114,15 +132,15 @@ func readMessages(options queueReadOptions) {
 	for {
 		select {
 		case <-sigEnd:
-			fmt.Println("User canceled, stopping...")
+			_, _ = fmt.Fprintln(os.Stderr, "User canceled, stopping...")
 			cancel()
 		case <-done:
-			fmt.Println("Finished")
+			fmt.Println("done")
 			return
 		case err := <-options.err:
 			_, _ = fmt.Fprintf(os.Stderr, "Error:%v\n", err)
 		case msg := <-options.msg:
-			results = append(results, msg...)
+			results.Messages = append(results.Messages, msg...)
 			sum.add(msg)
 		}
 	}

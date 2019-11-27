@@ -2,13 +2,57 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
+	"os"
+	"time"
 )
 
-type summary struct {
-	msgAttribs map[string]map[string]int
-	msgCount   int
-	limit      int
+type (
+	timeRange struct {
+		From    int64  `json:"from"`
+		FromStr string `json:"fromDtm"`
+		To      int64  `json:"to"`
+		ToStr   string `json:"toDtm"`
+	}
+	summary struct {
+		MsgCount   int                       `json:"messageCount"`
+		MsgAttribs map[string]map[string]int `json:"customAttributes"`
+		Timestamps map[string]timeRange      `json:"timestamps"`
+		limit      int
+	}
+)
+
+const msRFCTimeFormat = "2006-01-02T15:04:05.999"
+
+func (t timeRange) record(value int64) timeRange {
+	if t.From == 0 && t.To == 0 {
+		t.From = value
+		t.To = value
+	} else if value < t.From {
+		t.From = value
+	} else if value > t.To {
+		t.To = value
+	}
+	return t
+}
+
+func (t timeRange) format() timeRange {
+	return timeRange{
+		From:    t.From,
+		To:      t.To,
+		FromStr: fromUnixMilli(t.From).Format(msRFCTimeFormat),
+		ToStr:   fromUnixMilli(t.To).Format(msRFCTimeFormat),
+	}
+}
+
+// From https://github.com/Tigraine/go-timemilli/blob/master/timemilli.go
+const millisInSecond = 1000
+const nsInSecond = 1000000
+
+// Converts Unix Epoch From milliseconds To time.Time
+func fromUnixMilli(ms int64) time.Time {
+	return time.Unix(ms/int64(millisInSecond), (ms%int64(millisInSecond))*int64(nsInSecond))
 }
 
 func (s *summary) add(msg []message) {
@@ -16,37 +60,51 @@ func (s *summary) add(msg []message) {
 		s.addOne(m)
 	}
 }
+
 func (s *summary) addOne(msg message) {
-	s.msgCount++
-	if len(s.msgAttribs) == 0 {
-		s.msgAttribs = make(map[string]map[string]int)
+	s.MsgCount++
+	if len(s.MsgAttribs) == 0 {
+		s.MsgAttribs = make(map[string]map[string]int)
+		s.Timestamps = make(map[string]timeRange)
 	}
 	var ok bool
 	var m map[string]int
 	for k, v := range msg.MsgAttrib {
-		if m, ok = s.msgAttribs[k]; !ok {
+		if m, ok = s.MsgAttribs[k]; !ok {
 			m = make(map[string]int)
-			s.msgAttribs[k] = m
+			s.MsgAttribs[k] = m
 		}
 		m[v]++
+	}
+	for k, v := range msg.Attrib {
+		if ok, ts := isTimestamp(k, v); ok {
+			s.Timestamps[k] = s.Timestamps[k].record(ts)
+		}
 	}
 }
 
 func (s *summary) write() {
-	if len(s.msgAttribs) > 0 {
-		buf, _ := json.Marshal(s.msgAttribs)
-		_ = ioutil.WriteFile("summary.json", buf, 0666)
+	if len(s.MsgAttribs) > 0 {
+		s.analyse()
+		buf, _ := json.Marshal(s)
+		err := ioutil.WriteFile("summary.json", buf, 0666)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "ERROR:failed summary.json %v", err)
+		}
 	}
 }
 
 func (s *summary) analyse() {
-	for k, v := range s.msgAttribs {
-		if len(v) == s.msgCount && s.msgCount > 1 {
+	for k, v := range s.MsgAttribs {
+		if len(v) == s.MsgCount && s.MsgCount > 1 {
 			var randomK string
 			for randomK, _ = range v {
 				break
 			}
-			s.msgAttribs[k] = map[string]int{"$UNIQUE:" + randomK: s.msgCount}
+			s.MsgAttribs[k] = map[string]int{"$UNIQUE:" + randomK: s.MsgCount}
 		}
+	}
+	for k := range s.Timestamps {
+		s.Timestamps[k] = s.Timestamps[k].format()
 	}
 }

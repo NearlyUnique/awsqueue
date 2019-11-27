@@ -1,4 +1,3 @@
 .idea/*
 awsqueue*
-result.json
-summary.json
+*.json

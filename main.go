@@ -14,9 +14,9 @@ import (
 )
 
 type QueueSearchResult struct {
-	Filter      string              `json:"filter"`
-	AllMessages bool                `json:"allMessages"`
-	Attrs       []map[string]string `json:"attrs"`
+	Filter      string                   `json:"filter"`
+	AllMessages bool                     `json:"allMessages"`
+	Attrs       []map[string]flexiString `json:"awsAttributes"`
 }
 
 const (
@@ -33,12 +33,12 @@ func main() {
 
 func _main() error {
 	fs := pflag.NewFlagSet("default", pflag.ExitOnError)
-	filter := fs.StringP("filter", "f", "", "substring search to filter queues")
-	asJson := fs.BoolP("json", "j", false, "Output format defaults to summary (count,name), asJson fives fuller output")
-	allMessages := fs.Bool("all", false, "If true shows message attributes event when there are no messages in the queue")
-	regionArg := fs.String("region", os.Getenv("AWS_REGION"), "AWS region, defaults from env variable (AWS_REGION) then to eu-west-1")
-	_ = fs.Bool("read", false, "read messages and meta data, will only run if a single queue can be resolved via --filter")
-	sendMsgSrc := fs.String("write-source", "", "json source file to send messages, will only run if a single queue can be resolved via --filter")
+	filter := fs.StringP("filter", "f", "", "substring search To filter queues")
+	asJson := fs.BoolP("json", "j", false, "Output format defaults To summary (count,name), asJson fives fuller output")
+	allMessages := fs.Bool("all", false, "If true shows message attributes event when there are no Messages in the Queue")
+	regionArg := fs.String("region", os.Getenv("AWS_REGION"), "AWS region, defaults From env variable (AWS_REGION) then To eu-west-1")
+	_ = fs.Bool("read", false, "read Messages and meta data, will only run if a single Queue can be resolved via --filter")
+	sendMsgSrc := fs.String("write-source", "", "json source file To send Messages, will only run if a single Queue can be resolved via --filter")
 	err := fs.Parse(os.Args[1:])
 	if err != nil {
 		return err
@@ -66,13 +66,13 @@ func _main() error {
 	case CmdActionRead:
 		ok, queueUrl := canResolveSingleQueue(result)
 		if !ok {
-			return errors.New("did not find exactly one queue, fix filter first")
+			return errors.New("did not find exactly one Queue, fix filter first")
 		}
 		readMessages(readOptions(context.Background(), svc, queueUrl))
 	case CmdActionWrite:
 		ok, queueUrl := canResolveSingleQueue(result)
 		if !ok {
-			return errors.New("did not find exactly one queue, fix filter first")
+			return errors.New("did not find exactly one Queue, fix filter first")
 		}
 		_ = sendMsgSrc
 		sendMessages(sendOptions{

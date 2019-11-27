@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/stretchr/testify/assert"
@@ -37,8 +38,8 @@ func Test_a_single_message_can_produce_a_summary(t *testing.T) {
 	sum.addOne(msg)
 	sum.analyse()
 
-	assert.Equal(t, 1, len(sum.msgAttribs["mk1"]))
-	assert.Equal(t, 1, sum.msgAttribs["mk1"]["mv1"])
+	assert.Equal(t, 1, len(sum.MsgAttribs["mk1"]))
+	assert.Equal(t, 1, sum.MsgAttribs["mk1"]["mv1"])
 }
 
 func Test_when_multiple_messages_are_processed(t *testing.T) {
@@ -48,16 +49,16 @@ func Test_when_multiple_messages_are_processed(t *testing.T) {
 		}
 	}
 	t.Run("with identical keys", func(t *testing.T) {
-		t.Run("if the values from a non-unique finite set there is a count of the kv pair for the key", func(t *testing.T) {
+		t.Run("if the values From a non-unique finite set there is a count of the kv pair for the key", func(t *testing.T) {
 			sum := summary{}
 			sum.addOne(msg("k1", "v1"))
 			sum.addOne(msg("k1", "v1"))
 			sum.addOne(msg("k1", "v2"))
 			sum.analyse()
 
-			assert.Equal(t, 2, len(sum.msgAttribs["k1"]))
-			assert.Equal(t, 2, sum.msgAttribs["k1"]["v1"])
-			assert.Equal(t, 1, sum.msgAttribs["k1"]["v2"])
+			assert.Equal(t, 2, len(sum.MsgAttribs["k1"]))
+			assert.Equal(t, 2, sum.MsgAttribs["k1"]["v1"])
+			assert.Equal(t, 1, sum.MsgAttribs["k1"]["v2"])
 		})
 		t.Run("if the number of unique values hits a limit a single marker event is returned", func(t *testing.T) {
 			sum := summary{}
@@ -70,11 +71,11 @@ func Test_when_multiple_messages_are_processed(t *testing.T) {
 
 			sum.analyse()
 
-			assert.Equal(t, 1, len(sum.msgAttribs))
-			assert.Equal(t, 1, len(sum.msgAttribs["k1"]))
+			assert.Equal(t, 1, len(sum.MsgAttribs))
+			assert.Equal(t, 1, len(sum.MsgAttribs["k1"]))
 			var part []string
 			actualCount := 0
-			for k, v := range sum.msgAttribs["k1"] {
+			for k, v := range sum.MsgAttribs["k1"] {
 				part = strings.Split(k, ":")
 				actualCount = v
 				break
@@ -93,14 +94,32 @@ func Test_when_multiple_messages_are_processed(t *testing.T) {
 			sum.addOne(msg("k3", "any-value"))
 			sum.analyse()
 
-			assert.Equal(t, 1, len(sum.msgAttribs["k1"]))
-			assert.Equal(t, 1, sum.msgAttribs["k1"]["any-value"])
-			assert.Equal(t, 1, len(sum.msgAttribs["k2"]))
-			assert.Equal(t, 1, sum.msgAttribs["k2"]["any-value"])
-			assert.Equal(t, 1, len(sum.msgAttribs["k3"]))
-			assert.Equal(t, 1, sum.msgAttribs["k3"]["any-value"])
+			assert.Equal(t, 1, len(sum.MsgAttribs["k1"]))
+			assert.Equal(t, 1, sum.MsgAttribs["k1"]["any-value"])
+			assert.Equal(t, 1, len(sum.MsgAttribs["k2"]))
+			assert.Equal(t, 1, sum.MsgAttribs["k2"]["any-value"])
+			assert.Equal(t, 1, len(sum.MsgAttribs["k3"]))
+			assert.Equal(t, 1, sum.MsgAttribs["k3"]["any-value"])
 		})
 	})
+}
+
+func Test_when_analyse_is_called_string_version_of_timestamps_are_set(t *testing.T) {
+	sum := summary{}
+	var dtm int64 = 1574154612615
+	var dtmStr = "2019-11-19T09:10:12.615"
+
+	sum.addOne(message{
+		Attrib: map[string]string{
+			"SentTimestamp": "1574154612615",
+		},
+	})
+	sum.analyse()
+
+	assert.Equal(t, dtm, sum.Timestamps["SentTimestamp"].From)
+	assert.Equal(t, dtm, sum.Timestamps["SentTimestamp"].To)
+	assert.Equal(t, dtmStr, sum.Timestamps["SentTimestamp"].ToStr)
+	assert.Equal(t, dtmStr, sum.Timestamps["SentTimestamp"].FromStr)
 }
 
 type (
@@ -113,6 +132,7 @@ type (
 func builder() *buildData {
 	return &buildData{}
 }
+
 func (b *buildData) withAttr(kvs ...kv) *buildData {
 	msg := b.msgs[len(b.msgs)-1]
 	msg.Attributes = make(map[string]*string)
@@ -148,4 +168,8 @@ func msgAttr(val string) *sqs.MessageAttributeValue {
 
 func pstring(s string) *string {
 	return &s
+}
+
+func unixSec(t time.Time) int64 {
+	return t.UnixNano() / 1000000
 }

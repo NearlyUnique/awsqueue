@@ -11,19 +11,27 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/spf13/pflag"
 )
 
 func formatValue(key, value string) string {
+	if ok, ts := isTimestamp(key, value); ok {
+		return time.Unix(ts, 0).Format(msRFCTimeFormat)
+	} else {
+		return value
+	}
+}
+
+func isTimestamp(key, value string) (bool, int64) {
 	if !strings.HasSuffix(key, "Timestamp") {
-		return value
+		return false, 0
 	}
-	ts, err := strconv.Atoi(value)
+	ts, err := strconv.ParseInt(value, 10, 0)
 	if err != nil {
-		return value
+		return false, 0
 	}
-	t := time.Unix(int64(ts), 0)
-	return t.String()
+	return true, ts
 }
 
 func registerForCtrlC() chan os.Signal {
@@ -35,12 +43,30 @@ func registerForCtrlC() chan os.Signal {
 func canResolveSingleQueue(result QueueSearchResult) (bool, string) {
 	if len(result.Attrs) == 1 {
 		// one match, all good
-		return true, result.Attrs[0][AttrKeyQueueUrl]
+		return true, result.Attrs[0][AttrKeyQueueUrl].String()
 	}
+	// single match allowing for filters and all-Messages
+	queueUrl := ""
 	for _, attr := range result.Attrs {
-		if strings.EqualFold(result.Filter, attr["_Name"]) {
+		hasMessages := attr[sqs.QueueAttributeNameApproximateNumberOfMessages] != "0" && attr[sqs.QueueAttributeNameApproximateNumberOfMessages] != ""
+		if (result.AllMessages || (!result.AllMessages && hasMessages)) &&
+			result.matchesFilter(attr[AttrKeyQueueName].String()) {
+			if queueUrl != "" {
+				// more than one
+				queueUrl = ""
+				break
+			}
+			queueUrl = attr[AttrKeyQueueUrl].String()
+		}
+	}
+	if queueUrl != "" {
+		return true, queueUrl
+	}
+	// exact match across any Queue?
+	for _, attr := range result.Attrs {
+		if strings.EqualFold(result.Filter, attr[AttrKeyQueueName].String()) {
 			// several matches but an exact (case insensitive) match, all good
-			return true, attr[AttrKeyQueueUrl]
+			return true, attr[AttrKeyQueueUrl].String()
 		}
 	}
 	// ambiguous, so be more specific
@@ -71,6 +97,10 @@ func cmdAction(fs *pflag.FlagSet) (CmdAction, error) {
 }
 
 type flexiString string
+
+func (fs flexiString) String() string {
+	return string(fs)
+}
 
 // MarshalJSON custom
 func (fs flexiString) MarshalJSON() ([]byte, error) {

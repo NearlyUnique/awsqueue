@@ -4,13 +4,15 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/aws/aws-sdk-go/service/sqs"
+
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_resolve_single_queue(t *testing.T) {
-	type at []map[string]string
+	type at []map[string]flexiString
 	t.Run("single result resolved", func(t *testing.T) {
 		result := QueueSearchResult{
 			Filter: "",
@@ -49,6 +51,20 @@ func Test_resolve_single_queue(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, "http://any.com/2", queueUrl)
 	})
+	t.Run("multiple result with all-Messages=false and one match with Messages", func(t *testing.T) {
+		result := QueueSearchResult{
+			Filter:      "name",
+			AllMessages: false,
+			Attrs: at{
+				{AttrKeyQueueName: "name1", AttrKeyQueueUrl: "http://any.com/name1", sqs.QueueAttributeNameApproximateNumberOfMessages: "1"},
+				{AttrKeyQueueName: "name2", AttrKeyQueueUrl: "http://any.com/name2", sqs.QueueAttributeNameApproximateNumberOfMessages: "0"},
+			},
+		}
+		ok, queueUrl := canResolveSingleQueue(result)
+
+		assert.True(t, ok)
+		assert.Equal(t, "http://any.com/name1", queueUrl)
+	})
 }
 
 func Test_command_action_is_determined_from_flags(t *testing.T) {
@@ -68,7 +84,7 @@ func Test_command_action_is_determined_from_flags(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, CmdActionList, cmd)
 	})
-	t.Run("when --read, resolved to read", func(t *testing.T) {
+	t.Run("when --read, resolved To read", func(t *testing.T) {
 		fs := createFlagSet()
 		require.NoError(t, fs.Parse([]string{"any", "--read"}))
 
@@ -77,7 +93,7 @@ func Test_command_action_is_determined_from_flags(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, CmdActionRead, cmd)
 	})
-	t.Run("when --write-source, resolved to write", func(t *testing.T) {
+	t.Run("when --write-source, resolved To write", func(t *testing.T) {
 		fs := createFlagSet()
 		require.NoError(t, fs.Parse([]string{"any", "--write-source=any"}))
 
@@ -86,7 +102,7 @@ func Test_command_action_is_determined_from_flags(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, CmdActionWrite, cmd)
 	})
-	t.Run("attempts to read and write generate error", func(t *testing.T) {
+	t.Run("attempts To read and write generate error", func(t *testing.T) {
 		fs := createFlagSet()
 		require.NoError(t, fs.Parse([]string{"any", "--write-source=any", "--read"}))
 
