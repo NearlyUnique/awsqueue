@@ -51,7 +51,10 @@ func readQueueAttrs(svc *sqs.SQS, list *sqs.ListQueuesOutput, filter string, all
 					AttrKeyQueueName: flexiString(parts[len(parts)-1]),
 				}
 				for key, value := range attr.Attributes {
-					attrs[key] = flexiString(formatValue(key, *value))
+					if ok, ts := isTimestamp(key, *value); ok {
+						attrs["_"+key] = flexiString(formatTimestamp(ts))
+					}
+					attrs[key] = flexiString(*value)
 				}
 				ch <- attrs
 			}(*q)

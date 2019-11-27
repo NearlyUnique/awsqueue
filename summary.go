@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"time"
 )
 
 type (
@@ -23,7 +22,7 @@ type (
 	}
 )
 
-const msRFCTimeFormat = "2006-01-02T15:04:05.999"
+const msRFCTimeFormat = "2006-01-02 15:04:05.999"
 
 func (t timeRange) record(value int64) timeRange {
 	if t.From == 0 && t.To == 0 {
@@ -46,15 +45,6 @@ func (t timeRange) format() timeRange {
 	}
 }
 
-// From https://github.com/Tigraine/go-timemilli/blob/master/timemilli.go
-const millisInSecond = 1000
-const nsInSecond = 1000000
-
-// Converts Unix Epoch From milliseconds To time.Time
-func fromUnixMilli(ms int64) time.Time {
-	return time.Unix(ms/int64(millisInSecond), (ms%int64(millisInSecond))*int64(nsInSecond))
-}
-
 func (s *summary) add(msg []message) {
 	for _, m := range msg {
 		s.addOne(m)
@@ -69,14 +59,14 @@ func (s *summary) addOne(msg message) {
 	}
 	var ok bool
 	var m map[string]int
-	for k, v := range msg.MsgAttrib {
+	for k, v := range msg.CustAttrib {
 		if m, ok = s.MsgAttribs[k]; !ok {
 			m = make(map[string]int)
 			s.MsgAttribs[k] = m
 		}
 		m[v]++
 	}
-	for k, v := range msg.Attrib {
+	for k, v := range msg.AwsAttrib {
 		if ok, ts := isTimestamp(k, v); ok {
 			s.Timestamps[k] = s.Timestamps[k].record(ts)
 		}

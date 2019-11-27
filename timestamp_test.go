@@ -11,10 +11,10 @@ func Test_a_single_timestamp_sets_to_and_from(t *testing.T) {
 	const key = "ApproximateFirstReceiveTimestamp"
 	var dtm int64 = 1574154612615
 	dtmStr := "1574154612615"
-	fmtDtm := "2019-11-19T09:10:12.615"
+	fmtDtm := "2019-11-19 09:10:12.615"
 
 	sum := summary{}
-	sum.addOne(message{Attrib: map[string]string{
+	sum.addOne(message{AwsAttrib: map[string]string{
 		key: dtmStr,
 	}})
 
@@ -69,4 +69,11 @@ func Test_recording_a_timestamp(t *testing.T) {
 		assert.Equal(t, now.Unix(), ts.From)
 		assert.Equal(t, nowPlus10Seconds.Unix(), ts.To)
 	})
+}
+
+func Test_formatTimestamp_works_with_ms_values(t *testing.T) {
+	assert.Equal(t, "2019-11-21 12:47:22.983", formatTimestamp(1574340442983))
+}
+func Test_formatTimestamp_works_with_sec_values(t *testing.T) {
+	assert.Equal(t, "2019-11-21 12:47:22", formatTimestamp(1574340442))
 }

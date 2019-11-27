@@ -23,9 +23,9 @@ type (
 		wg       *sync.WaitGroup
 	}
 	message struct {
-		MsgAttrib map[string]string `json:"customAttributes"`
-		Attrib    map[string]string `json:"awsAttributes"`
-		Message   flexiString       `json:"message"`
+		CustAttrib map[string]string `json:"customAttributes"`
+		AwsAttrib  map[string]string `json:"awsAttributes"`
+		Message    flexiString       `json:"message"`
 	}
 )
 
@@ -67,23 +67,27 @@ func readQueueData(opts queueReadOptions) {
 func simplifyMessage(input *sqs.ReceiveMessageOutput) []message {
 	var result []message
 	msg := message{
-		Attrib:    make(map[string]string),
-		MsgAttrib: make(map[string]string),
+		AwsAttrib:  make(map[string]string),
+		CustAttrib: make(map[string]string),
 	}
 	for _, m := range input.Messages {
 		for k, v := range m.Attributes {
 			val := "<nil>"
 			if v != nil {
+				if ok, ts := isTimestamp(k, *v); ok {
+					msg.AwsAttrib["_"+k] = formatTimestamp(ts)
+				}
 				val = *v
+
 			}
-			msg.Attrib[k] = val
+			msg.AwsAttrib[k] = val
 		}
 		for k, v := range m.MessageAttributes {
 			val := "<nil>"
 			if v != nil {
 				val = *v.StringValue
 			}
-			msg.MsgAttrib[k] = val
+			msg.CustAttrib[k] = val
 		}
 		if m.Body != nil {
 			msg.Message = flexiString(*m.Body)
@@ -103,11 +107,11 @@ func readMessages(options queueReadOptions) {
 	}
 	done := signalWaitGroupDone(options.wg)
 	results := struct {
-		Extracted time.Time `json:"extracted"`
+		Extracted string    `json:"extracted"`
 		Queue     string    `json:"queueUrl"`
 		Messages  []message `json:"messages"`
 	}{
-		Extracted: time.Now().UTC(),
+		Extracted: time.Now().UTC().Format(msRFCTimeFormat),
 		Queue:     options.queueURL,
 	}
 	var sum summary

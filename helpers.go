@@ -6,33 +6,12 @@ import (
 	"errors"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/spf13/pflag"
 )
-
-func formatValue(key, value string) string {
-	if ok, ts := isTimestamp(key, value); ok {
-		return time.Unix(ts, 0).Format(msRFCTimeFormat)
-	} else {
-		return value
-	}
-}
-
-func isTimestamp(key, value string) (bool, int64) {
-	if !strings.HasSuffix(key, "Timestamp") {
-		return false, 0
-	}
-	ts, err := strconv.ParseInt(value, 10, 0)
-	if err != nil {
-		return false, 0
-	}
-	return true, ts
-}
 
 func registerForCtrlC() chan os.Signal {
 	ch := make(chan os.Signal, 2)

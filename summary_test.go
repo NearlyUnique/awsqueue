@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,15 +23,15 @@ func Test_a_single_message_can_be_simplified(t *testing.T) {
 
 	require.NotEmpty(t, actual)
 	assert.Equal(t, flexiString("body1"), actual[0].Message)
-	assert.Equal(t, "v1", actual[0].Attrib["k1"])
-	assert.Equal(t, "msgV1", actual[0].MsgAttrib["msgK1"])
+	assert.Equal(t, "v1", actual[0].AwsAttrib["k1"])
+	assert.Equal(t, "msgV1", actual[0].CustAttrib["msgK1"])
 }
 
 func Test_a_single_message_can_produce_a_summary(t *testing.T) {
 	msg := message{
-		Message:   "any-message",
-		Attrib:    map[string]string{"ak1": "av1"},
-		MsgAttrib: map[string]string{"mk1": "mv1"},
+		Message:    "any-message",
+		AwsAttrib:  map[string]string{"ak1": "av1"},
+		CustAttrib: map[string]string{"mk1": "mv1"},
 	}
 
 	sum := summary{}
@@ -45,7 +45,7 @@ func Test_a_single_message_can_produce_a_summary(t *testing.T) {
 func Test_when_multiple_messages_are_processed(t *testing.T) {
 	msg := func(k, v string) message {
 		return message{
-			MsgAttrib: map[string]string{k: v},
+			CustAttrib: map[string]string{k: v},
 		}
 	}
 	t.Run("with identical keys", func(t *testing.T) {
@@ -107,10 +107,10 @@ func Test_when_multiple_messages_are_processed(t *testing.T) {
 func Test_when_analyse_is_called_string_version_of_timestamps_are_set(t *testing.T) {
 	sum := summary{}
 	var dtm int64 = 1574154612615
-	var dtmStr = "2019-11-19T09:10:12.615"
+	var dtmStr = "2019-11-19 09:10:12.615"
 
 	sum.addOne(message{
-		Attrib: map[string]string{
+		AwsAttrib: map[string]string{
 			"SentTimestamp": "1574154612615",
 		},
 	})
@@ -137,7 +137,7 @@ func (b *buildData) withAttr(kvs ...kv) *buildData {
 	msg := b.msgs[len(b.msgs)-1]
 	msg.Attributes = make(map[string]*string)
 	for _, kv := range kvs {
-		msg.Attributes[kv.k] = pstring(kv.v)
+		msg.Attributes[kv.k] = aws.String(kv.v)
 	}
 	return b
 }
@@ -162,14 +162,6 @@ func (b *buildData) build() []*sqs.Message {
 
 func msgAttr(val string) *sqs.MessageAttributeValue {
 	return &sqs.MessageAttributeValue{
-		StringValue: pstring(val),
+		StringValue: aws.String(val),
 	}
-}
-
-func pstring(s string) *string {
-	return &s
-}
-
-func unixSec(t time.Time) int64 {
-	return t.UnixNano() / 1000000
 }
