@@ -13,6 +13,10 @@ import (
 	"github.com/spf13/pflag"
 )
 
+var version = "0.0.0"
+var commit = ""
+var date = ""
+
 type QueueSearchResult struct {
 	Filter      string                   `json:"filter"`
 	AllMessages bool                     `json:"allMessages"`
@@ -39,9 +43,15 @@ func _main() error {
 	regionArg := fs.String("region", os.Getenv("AWS_REGION"), "AWS region, defaults From env variable (AWS_REGION) then To eu-west-1")
 	_ = fs.Bool("read", false, "read Messages and meta data, will only run if a single Queue can be resolved via --filter")
 	sendMsgSrc := fs.String("write-source", "", "json source file To send Messages, will only run if a single Queue can be resolved via --filter")
+	showVersion := fs.Bool("version", false, "display version and exit")
+
 	err := fs.Parse(os.Args[1:])
 	if err != nil {
 		return err
+	}
+	if *showVersion {
+		fmt.Printf("%s %s %s\n", version, commit, date)
+		return nil
 	}
 
 	if *regionArg == "" {
