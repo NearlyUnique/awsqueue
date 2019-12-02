@@ -66,11 +66,11 @@ func readQueueData(opts queueReadOptions) {
 
 func simplifyMessage(input *sqs.ReceiveMessageOutput) []message {
 	var result []message
-	msg := message{
-		AwsAttrib:  make(map[string]string),
-		CustAttrib: make(map[string]string),
-	}
 	for _, m := range input.Messages {
+		msg := message{
+			AwsAttrib:  make(map[string]string),
+			CustAttrib: make(map[string]string),
+		}
 		for k, v := range m.Attributes {
 			val := "<nil>"
 			if v != nil {
