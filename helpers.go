@@ -4,52 +4,32 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
-	"strings"
+	"sync"
 	"syscall"
 
-	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/spf13/pflag"
 )
 
-func registerForCtrlC() chan os.Signal {
+func registerForCtrlC(cancel func()) {
 	ch := make(chan os.Signal, 2)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
-	return ch
+	go func() {
+		<-ch
+		_, _ = fmt.Fprintln(os.Stderr, "User canceled, stopping...")
+		cancel()
+	}()
 }
 
-func canResolveSingleQueue(result QueueSearchResult) (bool, string) {
-	if len(result.Attrs) == 1 {
-		// one match, all good
-		return true, result.Attrs[0][AttrKeyQueueUrl].String()
-	}
-	// single match allowing for filters and all-Messages
-	queueUrl := ""
-	for _, attr := range result.Attrs {
-		hasMessages := attr[sqs.QueueAttributeNameApproximateNumberOfMessages] != "0" && attr[sqs.QueueAttributeNameApproximateNumberOfMessages] != ""
-		if (result.AllMessages || (!result.AllMessages && hasMessages)) &&
-			result.matchesFilter(attr[AttrKeyQueueName].String()) {
-			if queueUrl != "" {
-				// more than one
-				queueUrl = ""
-				break
-			}
-			queueUrl = attr[AttrKeyQueueUrl].String()
-		}
-	}
-	if queueUrl != "" {
-		return true, queueUrl
-	}
-	// exact match across any Queue?
-	for _, attr := range result.Attrs {
-		if strings.EqualFold(result.Filter, attr[AttrKeyQueueName].String()) {
-			// several matches but an exact (case insensitive) match, all good
-			return true, attr[AttrKeyQueueUrl].String()
-		}
-	}
-	// ambiguous, so be more specific
-	return false, ""
+func signalWaitGroupDone(wg *sync.WaitGroup) chan struct{} {
+	ch := make(chan struct{})
+	go func() {
+		wg.Wait()
+		ch <- struct{}{}
+	}()
+	return ch
 }
 
 type CmdAction string
@@ -89,10 +69,14 @@ func (fs flexiString) MarshalJSON() ([]byte, error) {
 		return []byte(fs), nil
 	}
 	s := string(fs)
-	buf, err := json.Marshal(s)
+	buf, err := jsonMarshal(s)
 	if err != nil {
 		return nil, err
 	}
 	_, err = buffer.Write(buf)
 	return buffer.Bytes(), err
+}
+
+func jsonMarshal(v interface{}) ([]byte, error) {
+	return json.MarshalIndent(v, "", "  ")
 }

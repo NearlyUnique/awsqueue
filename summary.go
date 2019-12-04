@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -74,13 +73,11 @@ func (s *summary) addOne(msg message) {
 }
 
 func (s *summary) write() {
-	if len(s.MsgAttribs) > 0 {
-		s.analyse()
-		buf, _ := json.Marshal(s)
-		err := ioutil.WriteFile("summary.json", buf, 0666)
-		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "ERROR:failed summary.json %v", err)
-		}
+	s.analyse()
+	buf, _ := jsonMarshal(s)
+	err := ioutil.WriteFile("summary.json", buf, 0666)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "ERROR:failed summary.json %v", err)
 	}
 }
 

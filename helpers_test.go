@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/service/sqs"
-
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,17 +12,17 @@ import (
 
 func Test_resolve_single_queue(t *testing.T) {
 	type at []map[string]flexiString
-	t.Run("single result resolved", func(t *testing.T) {
+	t.Run("single result resolved that does not match filter will fail", func(t *testing.T) {
 		result := QueueSearchResult{
 			Filter: "",
 			Attrs: at{
 				{AttrKeyQueueName: "one", AttrKeyQueueUrl: "http://any.com/1"},
 			},
 		}
-		ok, queueUrl := canResolveSingleQueue(result)
+		queueUrl, err := resolveQueueUrl(result, noInteraction)
 
-		assert.True(t, ok)
-		assert.Equal(t, "http://any.com/1", queueUrl)
+		assert.Error(t, err)
+		assert.Equal(t, "", queueUrl)
 	})
 	t.Run("multiple result and no filter does not resolve", func(t *testing.T) {
 		result := QueueSearchResult{
@@ -33,36 +32,37 @@ func Test_resolve_single_queue(t *testing.T) {
 				{AttrKeyQueueName: "two", AttrKeyQueueUrl: "http://any.com/2"},
 			},
 		}
-		ok, queueUrl := canResolveSingleQueue(result)
+		queueUrl, err := resolveQueueUrl(result, noInteraction)
 
-		assert.False(t, ok)
+		assert.Error(t, err)
 		assert.Equal(t, "", queueUrl)
 	})
 	t.Run("multiple result and exact match filter resolves", func(t *testing.T) {
 		result := QueueSearchResult{
-			Filter: "one",
+			Filter:      "one",
+			AllMessages: true,
 			Attrs: at{
 				{AttrKeyQueueName: "oneTwo", AttrKeyQueueUrl: "http://any.com/1"},
 				{AttrKeyQueueName: "one", AttrKeyQueueUrl: "http://any.com/2"},
 			},
 		}
-		ok, queueUrl := canResolveSingleQueue(result)
+		queueUrl, err := resolveQueueUrl(result, noInteraction)
 
-		assert.True(t, ok)
+		assert.NoError(t, err)
 		assert.Equal(t, "http://any.com/2", queueUrl)
 	})
 	t.Run("multiple result with all-Messages=false and one match with Messages", func(t *testing.T) {
 		result := QueueSearchResult{
-			Filter:      "name",
+			Filter:      "submatch",
 			AllMessages: false,
 			Attrs: at{
-				{AttrKeyQueueName: "name1", AttrKeyQueueUrl: "http://any.com/name1", sqs.QueueAttributeNameApproximateNumberOfMessages: "1"},
-				{AttrKeyQueueName: "name2", AttrKeyQueueUrl: "http://any.com/name2", sqs.QueueAttributeNameApproximateNumberOfMessages: "0"},
+				{AttrKeyQueueName: "xsubmatch1", AttrKeyQueueUrl: "http://any.com/name1", sqs.QueueAttributeNameApproximateNumberOfMessages: "1"},
+				{AttrKeyQueueName: "xsubmatch2", AttrKeyQueueUrl: "http://any.com/name2", sqs.QueueAttributeNameApproximateNumberOfMessages: "0"},
 			},
 		}
-		ok, queueUrl := canResolveSingleQueue(result)
+		queueUrl, err := resolveQueueUrl(result, noInteraction)
 
-		assert.True(t, ok)
+		assert.NoError(t, err)
 		assert.Equal(t, "http://any.com/name1", queueUrl)
 	})
 }

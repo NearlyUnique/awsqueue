@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -14,13 +13,19 @@ import (
 )
 
 type (
-	queueReadOptions struct {
-		svc      *sqs.SQS
-		queueURL string
-		msg      chan []message
-		err      chan error
-		ctx      context.Context
-		wg       *sync.WaitGroup
+	readQueueOptions struct {
+		svc               *sqs.SQS
+		queueURL          string
+		visibilityTimeout int64
+		msg               chan []message
+		err               chan error
+		ctx               context.Context
+		wg                *sync.WaitGroup
+	}
+	readQueueResult struct {
+		Extracted string    `json:"extracted"`
+		Queue     string    `json:"queueUrl"`
+		Messages  []message `json:"messages"`
 	}
 	message struct {
 		CustAttrib map[string]string `json:"customAttributes"`
@@ -29,13 +34,17 @@ type (
 	}
 )
 
-func readQueueData(opts queueReadOptions) {
+func readQueueData(opts readQueueOptions) {
 	defer opts.wg.Done()
 	for {
 		select {
 		case <-opts.ctx.Done():
 			return
 		default:
+			var visibility int64 = 20
+			if opts.visibilityTimeout > 0 {
+				visibility = opts.visibilityTimeout
+			}
 			result, err := opts.svc.ReceiveMessageWithContext(opts.ctx,
 				&sqs.ReceiveMessageInput{
 					AttributeNames: []*string{
@@ -48,7 +57,7 @@ func readQueueData(opts queueReadOptions) {
 					},
 					QueueUrl:            &opts.queueURL,
 					MaxNumberOfMessages: aws.Int64(10),
-					VisibilityTimeout:   aws.Int64(20), // 20 seconds
+					VisibilityTimeout:   aws.Int64(visibility),
 					WaitTimeSeconds:     aws.Int64(0),
 				})
 
@@ -97,61 +106,61 @@ func simplifyMessage(input *sqs.ReceiveMessageOutput) []message {
 	return result
 }
 
-func readMessages(options queueReadOptions) {
-	var cancel func()
-	options.ctx, cancel = context.WithCancel(options.ctx)
-	sigEnd := registerForCtrlC()
+func readMessages(options readQueueOptions) {
 	for i := 0; i < 10; i++ {
 		options.wg.Add(1)
 		go readQueueData(options)
 	}
 	done := signalWaitGroupDone(options.wg)
-	results := struct {
-		Extracted string    `json:"extracted"`
-		Queue     string    `json:"queueUrl"`
-		Messages  []message `json:"messages"`
-	}{
+	results := readQueueResult{
 		Extracted: time.Now().UTC().Format(msRFCTimeFormat),
 		Queue:     options.queueURL,
 	}
 	var sum summary
 	defer func() {
-		if len(results.Messages) > 0 {
-			buf, err := json.Marshal(results)
-			if err != nil {
-				_, _ = fmt.Fprintf(os.Stderr, "ERROR:%v\n", err)
-			}
-			err = ioutil.WriteFile("result.json", buf, 0666)
-			if err != nil {
-				_, _ = fmt.Fprintf(os.Stderr, "ERROR2:%v\n", err)
-			}
-		}
+		results.write()
 		sum.write()
 	}()
 
 	for {
 		select {
-		case <-sigEnd:
-			_, _ = fmt.Fprintln(os.Stderr, "User canceled, stopping...")
-			cancel()
 		case <-done:
 			return
 		case err := <-options.err:
 			_, _ = fmt.Fprintf(os.Stderr, "Error:%v\n", err)
 		case msg := <-options.msg:
-			results.Messages = append(results.Messages, msg...)
+			results.add(msg)
 			sum.add(msg)
 		}
 	}
 }
 
-func readOptions(ctx context.Context, svc *sqs.SQS, queueUrl string) queueReadOptions {
-	return queueReadOptions{
-		svc:      svc,
-		queueURL: queueUrl,
-		ctx:      ctx,
-		msg:      make(chan []message),
-		err:      make(chan error),
-		wg:       &sync.WaitGroup{},
+func readOptions(ctx context.Context, svc *sqs.SQS, queueUrl string, visibility int64) readQueueOptions {
+	return readQueueOptions{
+		svc:               svc,
+		queueURL:          queueUrl,
+		visibilityTimeout: visibility,
+		ctx:               ctx,
+		msg:               make(chan []message),
+		err:               make(chan error),
+		wg:                &sync.WaitGroup{},
 	}
+}
+
+// write json result
+func (r *readQueueResult) write() {
+	if len(r.Messages) > 0 {
+		buf, err := jsonMarshal(r)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "ERROR:%v\n", err)
+		}
+		err = ioutil.WriteFile("result.json", buf, 0666)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "ERROR2:%v\n", err)
+		}
+	}
+}
+
+func (r *readQueueResult) add(messages []message) {
+	r.Messages = append(r.Messages, messages...)
 }

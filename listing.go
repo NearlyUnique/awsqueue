@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -13,21 +13,28 @@ import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 )
 
-func listQueues(svc *sqs.SQS, filter string, allMessages bool) (QueueSearchResult, error) {
-	list, err := svc.ListQueues(nil)
+type listQueueOptions struct {
+	svc         *sqs.SQS
+	filter      string
+	allMessages bool
+	ctx         context.Context
+}
+
+func listQueues(options listQueueOptions) (QueueSearchResult, error) {
+	list, err := options.svc.ListQueues(nil)
 	if err != nil {
 		return QueueSearchResult{}, err
 	}
-	result := readQueueAttrs(svc, list, filter, allMessages)
+	result := readQueueAttrs(options, list)
 	return result, nil
 }
 
-func readQueueAttrs(svc *sqs.SQS, list *sqs.ListQueuesOutput, filter string, allMessages bool) QueueSearchResult {
+func readQueueAttrs(options listQueueOptions, list *sqs.ListQueuesOutput) QueueSearchResult {
 	var wg sync.WaitGroup
 	ch := make(chan map[string]flexiString)
-	// toLower is not cool but the list is short, as are the strings
+
 	results := QueueSearchResult{
-		Filter: filter,
+		Filter: options.filter,
 	}
 
 	for _, q := range list.QueueUrls {
@@ -40,7 +47,7 @@ func readQueueAttrs(svc *sqs.SQS, list *sqs.ListQueuesOutput, filter string, all
 					AttributeNames: []*string{aws.String(sqs.QueueAttributeNameAll)},
 				}
 
-				attr, err := svc.GetQueueAttributes(&attrQuery)
+				attr, err := options.svc.GetQueueAttributes(&attrQuery)
 				if err != nil {
 					_, _ = fmt.Fprintf(os.Stderr, "Failed at: %v\n", q)
 					log.Fatal(err)
@@ -65,7 +72,7 @@ func readQueueAttrs(svc *sqs.SQS, list *sqs.ListQueuesOutput, filter string, all
 		close(ch)
 	}()
 
-	results.AllMessages = allMessages
+	results.AllMessages = options.allMessages
 	for a := range ch {
 		results.Attrs = append(results.Attrs, a)
 	}
@@ -83,7 +90,7 @@ func printList(asJson bool, result QueueSearchResult) error {
 		}
 	}
 	if asJson {
-		buf, err := json.Marshal(result)
+		buf, err := jsonMarshal(result)
 		if err != nil {
 			return errors.New(fmt.Sprintf("failed marshalling json: %v\n", err))
 		}
@@ -96,6 +103,32 @@ func printList(asJson bool, result QueueSearchResult) error {
 	return nil
 }
 
-func (results QueueSearchResult) matchesFilter(queue string) bool {
-	return results.Filter == "" || strings.Contains(strings.ToLower(queue), strings.ToLower(results.Filter))
+func (result QueueSearchResult) matchesFilter(queue string) bool {
+	return result.Filter == "" || strings.Contains(strings.ToLower(queue), strings.ToLower(result.Filter))
+}
+
+func (result QueueSearchResult) filteredQueues() []map[string]flexiString {
+	//if len(result.Attrs) == 1 {
+	//	// one match, all good
+	//	return result.Attrs[:1]
+	//}
+	var filtered []map[string]flexiString
+	for _, attr := range result.Attrs {
+		hasMessages := attr[sqs.QueueAttributeNameApproximateNumberOfMessages] != "0" && attr[sqs.QueueAttributeNameApproximateNumberOfMessages] != ""
+		if (result.AllMessages || (!result.AllMessages && hasMessages)) &&
+			result.matchesFilter(attr[AttrKeyQueueName].String()) {
+			filtered = append(filtered, attr)
+		}
+	}
+	return filtered
+}
+func (result QueueSearchResult) exactMatch() map[string]flexiString {
+	// exact match across any Queue?
+	for _, attr := range result.Attrs {
+		if strings.EqualFold(result.Filter, attr[AttrKeyQueueName].String()) {
+			// several matches but an exact (case insensitive) match, all good
+			return attr
+		}
+	}
+	return nil
 }
