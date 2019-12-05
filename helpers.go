@@ -9,8 +9,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-
-	"github.com/spf13/pflag"
 )
 
 func registerForCtrlC(cancel func()) {
@@ -40,9 +38,9 @@ const (
 	CmdActionWrite CmdAction = "write"
 )
 
-func cmdAction(fs *pflag.FlagSet) (CmdAction, error) {
-	read := fs.Lookup("read").Value.String() == "true"
-	write := fs.Lookup("write-source").Value.String() != ""
+func cmdAction(fs cliFlags) (CmdAction, error) {
+	read := fs.read
+	write := fs.sendMsgSrc != ""
 	if read && write {
 		return "", errors.New("cannot specify both read and write")
 	}

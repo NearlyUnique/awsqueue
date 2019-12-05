@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -68,16 +67,9 @@ func Test_resolve_single_queue(t *testing.T) {
 }
 
 func Test_command_action_is_determined_from_flags(t *testing.T) {
-	createFlagSet := func() *pflag.FlagSet {
-		fs := pflag.NewFlagSet("any", pflag.ContinueOnError)
-		fs.Bool("read", false, "")
-		fs.String("write-source", "", "")
-		return fs
-	}
-
 	t.Run("when no flags, default is list", func(t *testing.T) {
-		fs := createFlagSet()
-		require.NoError(t, fs.Parse([]string{}))
+		fs, err := parseFlags([]string{})
+		require.NoError(t, err)
 
 		cmd, err := cmdAction(fs)
 
@@ -85,8 +77,8 @@ func Test_command_action_is_determined_from_flags(t *testing.T) {
 		assert.Equal(t, CmdActionList, cmd)
 	})
 	t.Run("when --read, resolved To read", func(t *testing.T) {
-		fs := createFlagSet()
-		require.NoError(t, fs.Parse([]string{"any", "--read"}))
+		fs, err := parseFlags([]string{"any", "--read"})
+		require.NoError(t, err)
 
 		cmd, err := cmdAction(fs)
 
@@ -94,8 +86,8 @@ func Test_command_action_is_determined_from_flags(t *testing.T) {
 		assert.Equal(t, CmdActionRead, cmd)
 	})
 	t.Run("when --write-source, resolved To write", func(t *testing.T) {
-		fs := createFlagSet()
-		require.NoError(t, fs.Parse([]string{"any", "--write-source=any"}))
+		fs, err := parseFlags([]string{"any", "--write-source=any"})
+		require.NoError(t, err)
 
 		cmd, err := cmdAction(fs)
 
@@ -103,10 +95,10 @@ func Test_command_action_is_determined_from_flags(t *testing.T) {
 		assert.Equal(t, CmdActionWrite, cmd)
 	})
 	t.Run("attempts To read and write generate error", func(t *testing.T) {
-		fs := createFlagSet()
-		require.NoError(t, fs.Parse([]string{"any", "--write-source=any", "--read"}))
+		fs, err := parseFlags([]string{"any", "--write-source=any", "--read"})
+		require.NoError(t, err)
 
-		_, err := cmdAction(fs)
+		_, err = cmdAction(fs)
 
 		require.Error(t, err)
 	})

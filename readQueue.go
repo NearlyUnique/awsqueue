@@ -17,6 +17,7 @@ type (
 		svc               *sqs.SQS
 		queueURL          string
 		visibilityTimeout int64
+		maxUnique         int64
 		msg               chan []message
 		err               chan error
 		ctx               context.Context
@@ -119,7 +120,7 @@ func readMessages(options readQueueOptions) {
 	var sum summary
 	defer func() {
 		results.write()
-		sum.write()
+		sum.write(options.maxUnique)
 	}()
 
 	for {
@@ -132,18 +133,6 @@ func readMessages(options readQueueOptions) {
 			results.add(msg)
 			sum.add(msg)
 		}
-	}
-}
-
-func readOptions(ctx context.Context, svc *sqs.SQS, queueUrl string, visibility int64) readQueueOptions {
-	return readQueueOptions{
-		svc:               svc,
-		queueURL:          queueUrl,
-		visibilityTimeout: visibility,
-		ctx:               ctx,
-		msg:               make(chan []message),
-		err:               make(chan error),
-		wg:                &sync.WaitGroup{},
 	}
 }
 

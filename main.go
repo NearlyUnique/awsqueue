@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/spf13/pflag"
 	"github.com/vito/go-interact/interact"
 )
 
@@ -37,35 +37,23 @@ func main() {
 }
 
 func _main() error {
-	fs := pflag.NewFlagSet("default", pflag.ExitOnError)
-	filter := fs.StringP("filter", "f", "", "substring search To filter queues")
-	asJson := fs.BoolP("json", "j", false, "Output format defaults To summary (count,name), asJson fives fuller output")
-	allMessages := fs.Bool("all", false, "If true shows message attributes event when there are no Messages in the Queue")
-	regionArg := fs.String("region", os.Getenv("AWS_REGION"), "AWS region, defaults From env variable (AWS_REGION) then To eu-west-1")
-	_ = fs.Bool("read", false, "read Messages and meta data, will only run if a single Queue can be resolved via --filter")
-	visibility := fs.Int64P("visibility-timeout", "t", 20, "when --read is specified, messages will be unavailable for this many seconds")
-	sendMsgSrc := fs.String("write-source", "", "json source file To send Messages, will only run if a single Queue can be resolved via --filter")
-	_ = sendMsgSrc // WIP
-	showVersion := fs.Bool("version", false, "display version and exit")
-	noInteraction := fs.Bool("no-interaction", false, "for CI and scripts to prevent user interaction")
-
-	err := fs.Parse(os.Args[1:])
+	flags, err := parseFlags(os.Args[1:])
 	if err != nil {
 		return err
 	}
-	if *showVersion {
+	if flags.showVersion {
 		fmt.Printf("%s %s %s\n", version, commit, date)
 		return nil
 	}
 
-	if *regionArg == "" {
-		*regionArg = "eu-west-1"
+	if flags.regionArg == "" {
+		flags.regionArg = "eu-west-1"
 	}
-	sess, err := session.NewSession(&aws.Config{Region: aws.String(*regionArg)})
+	sess, err := session.NewSession(&aws.Config{Region: aws.String(flags.regionArg)})
 	if err != nil {
 		return err
 	}
-	action, err := cmdAction(fs)
+	action, err := cmdAction(flags)
 	if err != nil {
 		return err
 	}
@@ -76,25 +64,34 @@ func _main() error {
 	svc := sqs.New(sess)
 	result, err := listQueues(listQueueOptions{
 		svc:         svc,
-		filter:      *filter,
-		allMessages: *allMessages,
+		filter:      flags.filter,
+		allMessages: flags.allMessages,
 		ctx:         ctx,
 	})
 	if err != nil {
 		return err
 	}
 	if action == CmdActionList {
-		return printList(*asJson, result)
+		return printList(flags.asJson, result)
 	}
 
-	queueURL, err := resolveQueueUrl(result, interactionType(*noInteraction))
+	queueURL, err := resolveQueueUrl(result, interactionType(flags.noInteraction))
 	if err != nil {
 		return err
 	}
 
 	switch action {
 	case CmdActionRead:
-		readMessages(readOptions(ctx, svc, queueURL, *visibility))
+		readMessages(readQueueOptions{
+			svc:               svc,
+			queueURL:          queueURL,
+			visibilityTimeout: flags.visibility,
+			maxUnique:         flags.maxUnique,
+			ctx:               ctx,
+			msg:               make(chan []message),
+			err:               make(chan error),
+			wg:                &sync.WaitGroup{},
+		})
 	case CmdActionWrite:
 		sendMessages(sendOptions{
 			queueURL: queueURL,

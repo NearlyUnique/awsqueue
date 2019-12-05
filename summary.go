@@ -6,6 +6,8 @@ import (
 	"os"
 )
 
+const KeyNameMaxUnique = "$MAX_UNIQUE_LIMIT_REACHED"
+
 type (
 	timeRange struct {
 		From    int64  `json:"from"`
@@ -72,8 +74,8 @@ func (s *summary) addOne(msg message) {
 	}
 }
 
-func (s *summary) write() {
-	s.analyse()
+func (s *summary) write(maxUnique int64) {
+	s.analyse(maxUnique)
 	buf, _ := jsonMarshal(s)
 	err := ioutil.WriteFile("summary.json", buf, 0666)
 	if err != nil {
@@ -81,14 +83,19 @@ func (s *summary) write() {
 	}
 }
 
-func (s *summary) analyse() {
+func (s *summary) analyse(maxUnique int64) {
 	for k, v := range s.MsgAttribs {
-		if len(v) == s.MsgCount && s.MsgCount > 1 {
-			var randomK string
-			for randomK, _ = range v {
-				break
+		if len(v) == s.MsgCount && int64(s.MsgCount) > maxUnique {
+			trimmed := make(map[string]int)
+			for kt, _ := range v {
+				trimmed[kt] = 1
+				if int64(len(trimmed)) == maxUnique {
+					break
+				}
 			}
-			s.MsgAttribs[k] = map[string]int{"$UNIQUE:" + randomK: s.MsgCount}
+			trimmed[KeyNameMaxUnique] = 0
+
+			s.MsgAttribs[k] = trimmed
 		}
 	}
 	for k := range s.Timestamps {

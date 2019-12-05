@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -10,6 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const anyLimit = 1000
 
 func Test_a_single_message_can_be_simplified(t *testing.T) {
 	awsMsg := sqs.ReceiveMessageOutput{
@@ -36,7 +37,7 @@ func Test_a_single_message_can_produce_a_summary(t *testing.T) {
 
 	sum := summary{}
 	sum.addOne(msg)
-	sum.analyse()
+	sum.analyse(anyLimit)
 
 	assert.Equal(t, 1, len(sum.MsgAttribs["mk1"]))
 	assert.Equal(t, 1, sum.MsgAttribs["mk1"]["mv1"])
@@ -54,36 +55,30 @@ func Test_when_multiple_messages_are_processed(t *testing.T) {
 			sum.addOne(msg("k1", "v1"))
 			sum.addOne(msg("k1", "v1"))
 			sum.addOne(msg("k1", "v2"))
-			sum.analyse()
+			sum.analyse(anyLimit)
 
 			assert.Equal(t, 2, len(sum.MsgAttribs["k1"]))
 			assert.Equal(t, 2, sum.MsgAttribs["k1"]["v1"])
 			assert.Equal(t, 1, sum.MsgAttribs["k1"]["v2"])
 		})
-		t.Run("if the number of unique values hits a limit a single marker event is returned", func(t *testing.T) {
+		t.Run("if the number of unique values hits a limit, the values upto the limit and a  marker event is returned", func(t *testing.T) {
 			sum := summary{}
+			const maxUnique int = 6
 			var values []string
-			for i := 0; i < 6; i++ {
+			for i := 0; i < maxUnique+1; i++ {
 				v := fmt.Sprintf("v%d", i)
 				values = append(values, v)
 				sum.addOne(msg("k1", v))
 			}
 
-			sum.analyse()
+			sum.analyse(int64(maxUnique))
 
-			assert.Equal(t, 1, len(sum.MsgAttribs))
-			assert.Equal(t, 1, len(sum.MsgAttribs["k1"]))
-			var part []string
-			actualCount := 0
-			for k, v := range sum.MsgAttribs["k1"] {
-				part = strings.Split(k, ":")
-				actualCount = v
-				break
-			}
-			require.Equal(t, 2, len(part))
-			assert.Equal(t, "$UNIQUE", part[0])
-			assert.Contains(t, values, part[1])
-			assert.Equal(t, 6, actualCount)
+			require.Equal(t, 1, len(sum.MsgAttribs))
+			assert.Equal(t, maxUnique+1, len(sum.MsgAttribs["k1"]))
+
+			count, ok := sum.MsgAttribs["k1"][KeyNameMaxUnique]
+			assert.True(t, ok)
+			assert.Equal(t, 0, count)
 		})
 	})
 	t.Run("with unique keys", func(t *testing.T) {
@@ -92,7 +87,7 @@ func Test_when_multiple_messages_are_processed(t *testing.T) {
 			sum.addOne(msg("k1", "any-value"))
 			sum.addOne(msg("k2", "any-value"))
 			sum.addOne(msg("k3", "any-value"))
-			sum.analyse()
+			sum.analyse(anyLimit)
 
 			assert.Equal(t, 1, len(sum.MsgAttribs["k1"]))
 			assert.Equal(t, 1, sum.MsgAttribs["k1"]["any-value"])
@@ -114,7 +109,7 @@ func Test_when_analyse_is_called_string_version_of_timestamps_are_set(t *testing
 			"SentTimestamp": "1574154612615",
 		},
 	})
-	sum.analyse()
+	sum.analyse(anyLimit)
 
 	assert.Equal(t, dtm, sum.Timestamps["SentTimestamp"].From)
 	assert.Equal(t, dtm, sum.Timestamps["SentTimestamp"].To)

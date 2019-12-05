@@ -21,7 +21,7 @@ func Test_a_single_timestamp_sets_to_and_from(t *testing.T) {
 	assert.Equal(t, dtm, sum.Timestamps[key].From)
 	assert.Equal(t, dtm, sum.Timestamps[key].To)
 
-	sum.analyse()
+	sum.analyse(anyLimit)
 
 	assert.Equal(t, fmtDtm, sum.Timestamps[key].FromStr)
 	assert.Equal(t, fmtDtm, sum.Timestamps[key].ToStr)
